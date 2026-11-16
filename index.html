@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>POC vérification RGE — Domeva × Mag&amp;Cie</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --ink:#1d2530; --muted:#5d6b7a; --line:#dde3ea;
+    --accent:#1f5f8b; --ok:#1e7b46; --ok-bg:#e6f4ec; --warn:#a86200; --warn-bg:#fdf1de;
+    --ko:#b3261e; --ko-bg:#fbe9e7; --chk:#5b4bb0; --chk-bg:#eeebfa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+  header{background:#fff;border-bottom:1px solid var(--line);padding:18px 24px}
+  header h1{margin:0;font-size:20px}
+  header p{margin:4px 0 0;color:var(--muted);font-size:13px}
+  main{max-width:1100px;margin:0 auto;padding:20px 16px 60px}
+  .tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+  .tabs button{border:1px solid var(--line);background:#fff;padding:8px 14px;border-radius:8px;cursor:pointer;font:inherit;color:var(--muted)}
+  .tabs button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:16px}
+  .grid{display:grid;grid-template-columns:2fr 2fr 1fr auto;gap:12px;align-items:end}
+  @media (max-width:800px){.grid{grid-template-columns:1fr}}
+  label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.03em}
+  input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:7px;font:inherit;background:#fff;color:var(--ink)}
+  textarea{min-height:150px;font-family:ui-monospace,Consolas,monospace;font-size:13px}
+  .btn{background:var(--accent);color:#fff;border:0;border-radius:7px;padding:10px 16px;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap}
+  .btn.secondary{background:#fff;color:var(--accent);border:1px solid var(--accent)}
+  .btn:disabled{opacity:.5;cursor:wait}
+  .hint{color:var(--muted);font-size:13px;margin:8px 0 0}
+  .verdict{border-radius:10px;padding:14px 16px;margin:0 0 14px;font-weight:600;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .verdict .big{font-size:18px}
+  .verdict small{font-weight:400;display:block;color:inherit;opacity:.9}
+  .s-OK{background:var(--ok-bg);color:var(--ok)}
+  .s-ALERTE{background:var(--warn-bg);color:var(--warn)}
+  .s-KO{background:var(--ko-bg);color:var(--ko)}
+  .s-VERIF{background:var(--chk-bg);color:var(--chk)}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:8px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;background:#fafbfc}
+  .tablewrap{overflow-x:auto}
+  .company{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}
+  .company:first-child{border-top:0;padding-top:0;margin-top:0}
+  .company h3{margin:0 0 2px;font-size:16px}
+  .company .meta{color:var(--muted);font-size:13px;margin-bottom:10px}
+  .pick{display:flex;flex-direction:column;gap:6px}
+  .pick button{text-align:left;background:#fff;border:1px solid var(--line);border-radius:7px;padding:9px 12px;cursor:pointer;font:inherit}
+  .pick button:hover{border-color:var(--accent)}
+  .err{background:var(--ko-bg);color:var(--ko);padding:12px 14px;border-radius:8px}
+  .summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .summary span{padding:6px 12px;border-radius:8px;font-weight:600;font-size:13px}
+  footer{color:var(--muted);font-size:12.5px;max-width:1100px;margin:0 auto;padding:0 16px 30px}
+  a{color:var(--accent)}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>Vérification des qualifications RGE — démonstrateur</h1>
+  <p>Domeva · Lot 2 contrôle documentaire · préfiguration du Gem « Qualifications RGE » · <span id="srcdate">source : ADEME, chargement…</span></p>
+</header>
+
+<main>
+  <div class="tabs">
+    <button class="active" data-tab="single">Vérifier une entreprise</button>
+    <button data-tab="batch">Contrôler un dossier (plusieurs entreprises)</button>
+  </div>
+
+  <!-- Unitaire -->
+  <section id="tab-single">
+    <div class="card">
+      <form id="f-single" class="grid" autocomplete="off">
+        <div>
+          <label for="q">Entreprise : nom, SIREN ou SIRET</label>
+          <input id="q" placeholder="ex. 824 546 956 ou Durand Isolation" required>
+        </div>
+        <div>
+          <label for="dom">Domaine de travaux RGE</label>
+          <select id="dom"></select>
+        </div>
+        <div>
+          <label for="seuil">Alerte si expire sous (jours)</label>
+          <input id="seuil" type="number" min="0" value="90">
+        </div>
+        <div><button class="btn" id="b-single" type="submit">Vérifier</button></div>
+      </form>
+      <p class="hint">Le SIRET (14 chiffres) donne un résultat sans ambiguïté. Le SIREN (9 chiffres) regroupe tous les établissements. Le nom peut renvoyer plusieurs entreprises : il faut alors choisir.</p>
+    </div>
+    <div class="card hidden" id="out-single"></div>
+  </section>
+
+  <!-- Lot -->
+  <section id="tab-batch" class="hidden">
+    <div class="card">
+      <label for="lot">Une ligne par entreprise : identifiant ; domaine de travaux</label>
+      <textarea id="lot" placeholder="82454695600023 ; Architecte
+Durand Isolation ; Isolation des combles perdus
+512345678 ; Pompe à chaleur : chauffage"></textarea>
+      <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;align-items:end">
+        <div style="width:200px">
+          <label for="seuil2">Alerte si expire sous (jours)</label>
+          <input id="seuil2" type="number" min="0" value="90">
+        </div>
+        <button class="btn" id="b-batch" type="button">Contrôler le lot</button>
+        <button class="btn secondary hidden" id="b-copy" type="button">Copier le tableau</button>
+        <span id="copymsg" class="hint"></span>
+      </div>
+      <p class="hint">Le domaine peut être saisi en clair (« combles », « PAC », « fenêtres »…) : il est rapproché de la liste officielle, et le rapprochement retenu est affiché. Le tableau copié se colle dans Excel ou dans un document.</p>
+    </div>
+    <div class="card hidden" id="out-batch"></div>
+  </section>
+</main>
+
+<footer>
+  Source : liste des entreprises RGE publiée par l'ADEME (open data, mise à jour quotidienne), la même base que l'annuaire
+  <a href="https://france-renov.gouv.fr/annuaires-professionnels/artisan-rge-architecte" target="_blank" rel="noopener">France Rénov'</a>.
+  Les dates sont celles transmises par les organismes de qualification (Qualibat, Qualit'EnR, Qualifelec…). Démonstrateur : un résultat ne remplace pas la lecture de l'attestation de l'organisme. Aucune donnée saisie n'est conservée.
+</footer>
+
+<script>
+const API = "https://data.ademe.fr/data-fair/api/v1/datasets/liste-des-entreprises-rge-2";
+const DOMAINES = [
+  "Isolation par l'intérieur des murs ou rampants de toitures ou plafonds",
+  "Isolation des murs par l'extérieur",
+  "Isolation des combles perdus",
+  "Isolation des toitures terrasses ou des toitures par l'extérieur",
+  "Isolation des planchers bas",
+  "Fenêtres, volets, portes donnant sur l'extérieur",
+  "Fenêtres de toit",
+  "Ventilation mécanique",
+  "Pompe à chaleur : chauffage",
+  "Chauffe-Eau Thermodynamique",
+  "Chaudière condensation ou micro-cogénération gaz ou fioul",
+  "Chaudière bois",
+  "Poêle ou insert bois",
+  "Chauffage et/ou eau chaude solaire",
+  "Panneaux solaires photovoltaïques",
+  "Radiateurs électriques, dont régulation.",
+  "Forage géothermique",
+  "Projet complet de rénovation",
+  "Architecte",
+  "Audit énergétique Maison individuelle",
+  "Audit énergétique Logement collectif",
+  "Etude thermique reglementaire",
+  "Etude enveloppe du bâtiment",
+  "Etude système technique bâtiment",
+  "Etude solaire photovoltaïque",
+  "Etude solaire thermique",
+  "Etude bois énergie",
+  "Etude forage géothermique",
+  "Etude eclairage",
+  "Etude ACV",
+  "Commisionnement"
+];
+// Raccourcis de saisie libre -> domaine officiel (mode lot)
+const ALIAS = {
+  "pac":"Pompe à chaleur : chauffage", "pompe a chaleur":"Pompe à chaleur : chauffage",
+  "cet":"Chauffe-Eau Thermodynamique", "ballon thermodynamique":"Chauffe-Eau Thermodynamique",
+  "ite":"Isolation des murs par l'extérieur", "iti":"Isolation par l'intérieur des murs ou rampants de toitures ou plafonds",
+  "combles":"Isolation des combles perdus", "rampants":"Isolation par l'intérieur des murs ou rampants de toitures ou plafonds",
+  "plancher":"Isolation des planchers bas", "toiture terrasse":"Isolation des toitures terrasses ou des toitures par l'extérieur",
+  "menuiseries":"Fenêtres, volets, portes donnant sur l'extérieur", "fenetres":"Fenêtres, volets, portes donnant sur l'extérieur",
+  "velux":"Fenêtres de toit", "vmc":"Ventilation mécanique", "pv":"Panneaux solaires photovoltaïques",
+  "photovoltaique":"Panneaux solaires photovoltaïques", "poele":"Poêle ou insert bois", "insert":"Poêle ou insert bois",
+  "chaudiere gaz":"Chaudière condensation ou micro-cogénération gaz ou fioul", "audit":"Audit énergétique Maison individuelle",
+  "solaire thermique":"Chauffage et/ou eau chaude solaire", "cesi":"Chauffage et/ou eau chaude solaire", "ssc":"Chauffage et/ou eau chaude solaire"
+};
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const norm = s => String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+const today = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
+const fmt = iso => { if(!iso) return "[MANQUANT]"; if(iso.startsWith("2099")) return "sans date de fin"; const [y,m,d]=iso.slice(0,10).split("-"); return `${d}/${m}/${y}`; };
+const days = iso => Math.round((new Date(iso+"T00:00:00") - today())/86400000);
+const splitDom = s => String(s||"").split(/\s*;\s*/).filter(Boolean);
+
+// --- Init
+const sel = $("#dom");
+sel.innerHTML = `<option value="">Tous les domaines (vue complète)</option>` + DOMAINES.map(d=>`<option>${esc(d)}</option>`).join("");
+fetch(API).then(r=>r.json()).then(m=>{
+  const d = new Date(m.dataUpdatedAt || m.updatedAt);
+  $("#srcdate").textContent = `source : ADEME, données du ${d.toLocaleDateString("fr-FR")} à ${d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}`;
+}).catch(()=>{ $("#srcdate").textContent = "source : ADEME (date de mise à jour non lue)"; });
+
+document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("active",x===b));
+  $("#tab-single").classList.toggle("hidden", b.dataset.tab!=="single");
+  $("#tab-batch").classList.toggle("hidden", b.dataset.tab!=="batch");
+});
+
+// --- Requêtes API
+async function api(params){
+  const u = new URL(API + "/lines");
+  u.searchParams.set("size","300");
+  u.searchParams.set("select","siret,nom_entreprise,commune,code_postal,domaine,meta_domaine,nom_qualification,code_qualification,nom_certificat,organisme,lien_date_debut,lien_date_fin,url_qualification");
+  for(const [k,v] of Object.entries(params)) u.searchParams.set(k,v);
+  const r = await fetch(u);
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  return (await r.json()).results || [];
+}
+function kind(raw){
+  const digits = raw.replace(/[\s.\-]/g,"");
+  if(/^\d{14}$/.test(digits)) return {type:"siret", v:digits};
+  if(/^\d{9}$/.test(digits)) return {type:"siren", v:digits};
+  return {type:"nom", v:raw.trim()};
+}
+async function lookup(raw){
+  const k = kind(raw);
+  if(k.type==="siret") return {k, rows: await api({qs:`siret:"${k.v}"`})};
+  if(k.type==="siren") return {k, rows: await api({qs:`siret:${k.v}*`})};
+  return {k, rows: await api({q:k.v, q_fields:"nom_entreprise", q_mode:"complete"})};
+}
+function groupBySiret(rows){
+  const m = new Map();
+  for(const r of rows){ if(!m.has(r.siret)) m.set(r.siret,{siret:r.siret, nom:r.nom_entreprise, commune:r.commune, cp:r.code_postal, rows:[]}); m.get(r.siret).rows.push(r); }
+  return [...m.values()];
+}
+
+// --- Statut d'une qualification / d'un domaine
+function rowStatus(r, seuil){
+  const fin = r.lien_date_fin;
+  if(!fin) return {s:"VERIF", label:"À VÉRIFIER", txt:"date de fin non transmise"};
+  if(r.lien_date_debut && days(r.lien_date_debut) > 0) return {s:"VERIF", label:"À VÉRIFIER", txt:`débute le ${fmt(r.lien_date_debut)}`};
+  const n = days(fin);
+  if(n < 0) return {s:"KO", label:"KO", txt:`expirée le ${fmt(fin)}`};
+  if(fin.startsWith("2099")) return {s:"OK", label:"OK", txt:"valide, sans date de fin transmise"};
+  if(n <= seuil) return {s:"ALERTE", label:"ALERTE", txt:`expire le ${fmt(fin)} (dans ${n} j)`};
+  return {s:"OK", label:"OK", txt:`valide jusqu'au ${fmt(fin)}`};
+}
+function domainVerdict(rows, domaine, seuil){
+  const hit = rows.filter(r => splitDom(r.domaine).includes(domaine));
+  if(!hit.length) return {s:"KO", label:"KO", txt:"aucune qualification RGE pour ce domaine", row:null};
+  // on retient la qualification qui court le plus loin
+  hit.sort((a,b)=> String(b.lien_date_fin).localeCompare(String(a.lien_date_fin)));
+  const best = hit[0];
+  return {...rowStatus(best, seuil), row:best, autres:hit.length-1};
+}
+const pill = st => `<span class="pill s-${st.s}">${st.label}</span>`;
+
+// --- Rendu unitaire
+function renderCompany(c, domaine, seuil){
+  let html = `<div class="company"><h3>${esc(c.nom)}</h3><div class="meta">SIRET ${esc(c.siret)} · ${esc(c.cp)} ${esc(c.commune)}</div>`;
+  if(domaine){
+    const v = domainVerdict(c.rows, domaine, seuil);
+    html += `<div class="verdict s-${v.s}"><span class="big">${v.label}</span><span>${esc(domaine)}<small>${esc(v.txt)}${v.row?` · ${esc(v.row.nom_qualification)} · organisme ${esc(v.row.organisme)}`:""}</small></span></div>`;
+  }
+  const rows = [...c.rows].sort((a,b)=>String(b.lien_date_fin).localeCompare(String(a.lien_date_fin)));
+  html += `<div class="tablewrap"><table><thead><tr><th>Statut</th><th>Domaine(s)</th><th>Qualification</th><th>Organisme</th><th>Début</th><th>Fin</th><th>Attestation</th></tr></thead><tbody>`;
+  for(const r of rows){
+    const st = rowStatus(r, seuil);
+    const isTarget = domaine && splitDom(r.domaine).includes(domaine);
+    html += `<tr${isTarget?' style="background:#f3f8fc"':''}><td>${pill(st)}</td><td>${esc(r.domaine)}</td><td>${esc(r.nom_qualification)}<br><small style="color:var(--muted)">${esc(r.nom_certificat||"")}</small></td><td>${esc(r.organisme)}</td><td>${fmt(r.lien_date_debut)}</td><td>${fmt(r.lien_date_fin)}</td><td>${r.url_qualification?`<a href="${esc(r.url_qualification)}" target="_blank" rel="noopener">ouvrir</a>`:"[MANQUANT]"}</td></tr>`;
+  }
+  return html + `</tbody></table></div></div>`;
+}
+
+$("#f-single").addEventListener("submit", async e=>{
+  e.preventDefault();
+  const out = $("#out-single"), btn = $("#b-single");
+  const raw = $("#q").value, domaine = sel.value, seuil = +$("#seuil").value || 0;
+  out.classList.remove("hidden"); out.innerHTML = "Recherche…"; btn.disabled = true;
+  try{
+    const {k, rows} = await lookup(raw);
+    const comps = groupBySiret(rows);
+    if(!comps.length){
+      out.innerHTML = `<div class="verdict s-KO"><span class="big">KO</span><span>Aucune entreprise RGE trouvée pour « ${esc(raw)} »<small>${k.type==="nom"?"Essayer avec le SIRET figurant sur le devis, ou une partie du nom.":"Ce SIRET/SIREN n'a aucune qualification RGE, en cours ou passée, dans la base."}</small></span></div>`;
+      return;
+    }
+    if(k.type==="nom" && comps.length>1){
+      out.innerHTML = `<p><strong>${comps.length} entreprises</strong> correspondent à « ${esc(raw)} ». Choisir :</p><div class="pick">` +
+        comps.slice(0,40).map((c,i)=>`<button data-i="${i}"><strong>${esc(c.nom)}</strong> — SIRET ${esc(c.siret)} · ${esc(c.cp)} ${esc(c.commune)} · ${c.rows.length} qualification(s)</button>`).join("") +
+        `</div>${comps.length>40?'<p class="hint">Liste limitée à 40 : préciser le nom ou utiliser le SIRET.</p>':''}`;
+      out.querySelectorAll(".pick button").forEach(b=>b.onclick=()=>{ out.innerHTML = renderCompany(comps[+b.dataset.i], domaine, seuil); });
+      return;
+    }
+    out.innerHTML = comps.map(c=>renderCompany(c, domaine, seuil)).join("");
+  }catch(err){
+    out.innerHTML = `<div class="err">La base ADEME n'a pas répondu (${esc(err.message)}). Vérification manuelle possible sur <a href="https://france-renov.gouv.fr/annuaires-professionnels/artisan-rge-architecte" target="_blank" rel="noopener">l'annuaire France Rénov'</a>.</div>`;
+  }finally{ btn.disabled = false; }
+});
+
+// --- Mode lot
+function matchDomain(txt){
+  const n = norm(txt);
+  if(!n) return null;
+  const exact = DOMAINES.find(d=>norm(d)===n); if(exact) return exact;
+  for(const [a,d] of Object.entries(ALIAS)) if(n===a || n.includes(a)) return d;
+  const inc = DOMAINES.filter(d=>norm(d).includes(n)); if(inc.length===1) return inc[0];
+  // recouvrement de mots
+  const words = n.split(" ").filter(w=>w.length>2);
+  let best=null, score=0;
+  for(const d of DOMAINES){ const nd = norm(d); const s = words.filter(w=>nd.includes(w)).length; if(s>score){score=s;best=d;} }
+  return score ? best : null;
+}
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+let lastTSV = "";
+
+$("#b-batch").onclick = async ()=>{
+  const out = $("#out-batch"), btn = $("#b-batch"), seuil = +$("#seuil2").value || 0;
+  const lines = $("#lot").value.split("\n").map(l=>l.trim()).filter(Boolean);
+  if(!lines.length) return;
+  btn.disabled = true; $("#b-copy").classList.add("hidden"); out.classList.remove("hidden");
+  const res = [];
+  for(let i=0;i<lines.length;i++){
+    out.innerHTML = `Contrôle ${i+1} / ${lines.length}…`;
+    const [idRaw, domRaw=""] = lines[i].split(/[;\t|]/).map(s=>s.trim());
+    const domaine = matchDomain(domRaw);
+    const r = {ligne:lines[i], id:idRaw, domSaisi:domRaw, domaine, entreprise:"", siret:"", st:null, row:null};
+    try{
+      if(!idRaw){ r.st={s:"VERIF",label:"À VÉRIFIER",txt:"identifiant [MANQUANT]"}; res.push(r); continue; }
+      const {k, rows} = await lookup(idRaw);
+      let comps = groupBySiret(rows);
+      if(k.type==="nom" && comps.length>1){
+        const exact = comps.filter(c=>norm(c.nom)===norm(idRaw));
+        if(exact.length===1) comps = exact;
+      }
+      if(!comps.length){ r.st={s:"KO",label:"KO",txt:"entreprise absente de la base RGE"}; }
+      else if(k.type==="nom" && comps.length>1){ r.entreprise = idRaw; r.st={s:"VERIF",label:"À VÉRIFIER",txt:`${comps.length} entreprises portent ce nom : indiquer le SIRET du devis`}; }
+      else{
+        const all = comps.flatMap(c=>c.rows);
+        r.entreprise = comps[0].nom; r.siret = comps.length===1 ? comps[0].siret : `SIREN ${k.v} (${comps.length} étab.)`;
+        if(!domaine){ r.st={s:"VERIF",label:"À VÉRIFIER",txt:`domaine ${domRaw?`« ${domRaw} » non reconnu`:"[MANQUANT]"}`}; }
+        else { const v = domainVerdict(all, domaine, seuil); r.st=v; r.row=v.row; }
+      }
+    }catch(err){ r.st={s:"VERIF",label:"À VÉRIFIER",txt:`base ADEME injoignable (${err.message})`}; }
+    res.push(r);
+    await sleep(120); // limite API : 10 appels/s
+  }
+  const cnt = s => res.filter(r=>r.st.s===s).length;
+  let html = `<div class="summary"><span class="s-OK">${cnt("OK")} OK</span><span class="s-ALERTE">${cnt("ALERTE")} alerte(s)</span><span class="s-KO">${cnt("KO")} KO</span><span class="s-VERIF">${cnt("VERIF")} à vérifier</span></div>`;
+  html += `<div class="tablewrap"><table><thead><tr><th>Statut</th><th>Entreprise</th><th>SIRET</th><th>Domaine contrôlé</th><th>Détail</th><th>Qualification / organisme</th><th>Attestation</th></tr></thead><tbody>`;
+  const tsv = [["Statut","Entreprise","SIRET","Domaine saisi","Domaine contrôlé","Détail","Qualification","Organisme","Fin de validité","Attestation"].join("\t")];
+  for(const r of res){
+    const domCell = r.domaine ? esc(r.domaine) + (r.domSaisi && norm(r.domSaisi)!==norm(r.domaine) ? `<br><small style="color:var(--muted)">saisi : « ${esc(r.domSaisi)} »</small>` : "") : `[MANQUANT]${r.domSaisi?` <small>(saisi : « ${esc(r.domSaisi)} »)</small>`:""}`;
+    html += `<tr><td>${pill(r.st)}</td><td>${esc(r.entreprise || r.id)}</td><td>${esc(r.siret)}</td><td>${domCell}</td><td>${esc(r.st.txt)}</td><td>${r.row?`${esc(r.row.nom_qualification)}<br><small style="color:var(--muted)">${esc(r.row.organisme)}</small>`:""}</td><td>${r.row&&r.row.url_qualification?`<a href="${esc(r.row.url_qualification)}" target="_blank" rel="noopener">ouvrir</a>`:""}</td></tr>`;
+    tsv.push([r.st.label, r.entreprise||r.id, r.siret, r.domSaisi, r.domaine||"", r.st.txt, r.row?.nom_qualification||"", r.row?.organisme||"", r.row?fmt(r.row.lien_date_fin):"", r.row?.url_qualification||""].map(x=>String(x).replace(/\s+/g," ")).join("\t"));
+  }
+  html += `</tbody></table></div><p class="hint">Contrôle du ${new Date().toLocaleDateString("fr-FR")} · seuil d'alerte ${seuil} jours · statut retenu = qualification du domaine qui court le plus loin.</p>`;
+  out.innerHTML = html; lastTSV = tsv.join("\n");
+  $("#b-copy").classList.remove("hidden"); btn.disabled = false;
+};
+$("#b-copy").onclick = async ()=>{
+  try{ await navigator.clipboard.writeText(lastTSV); $("#copymsg").textContent = "Tableau copié."; }
+  catch{ $("#copymsg").textContent = "Copie refusée par le navigateur."; }
+};
+</script>
+</body>
+</html>
