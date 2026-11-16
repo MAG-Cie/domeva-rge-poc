@@ -105,7 +105,8 @@ Durand Isolation ; Isolation des combles perdus
         </div>
         <button class="btn" id="b-batch" type="button">Contrôler le lot</button>
         <button class="btn secondary hidden" id="b-copy" type="button">Copier le tableau</button>
-        <button class="btn secondary hidden" id="b-dl" type="button">Télécharger les attestations</button>
+        <button class="btn secondary hidden" id="b-open" type="button">Ouvrir les attestations</button>
+        <button class="btn secondary hidden" id="b-dl" type="button">Télécharger le ZIP</button>
         <span id="copymsg" class="hint"></span>
       </div>
       <p class="hint">Le domaine peut être saisi en clair (« combles », « PAC », « fenêtres »…) : il est rapproché de la liste officielle, et le rapprochement retenu est affiché. Le tableau copié se colle dans Excel ou dans un document.</p>
@@ -265,11 +266,13 @@ function showCompanies(comps, domaine, seuil){
     if(domaine && !splitDom(r.domaine).includes(domaine)) continue;
     items.push({entreprise:c.nom, siret:c.siret, domaine:r.domaine, statut:rowStatus(r,seuil).label, row:r});
   }
-  const n = items.filter(i=>i.row.url_qualification).length;
+  const c = countAtt(items);
   out.innerHTML = `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
-      <button class="btn secondary" id="b-dl-single" type="button" ${n?"":"disabled"}>Télécharger les attestations (${n})</button>
-      <span class="hint" id="dlmsg-single" style="margin:0">${domaine?"Attestations du domaine choisi.":"Toutes les attestations de l'entreprise."}</span>
+      <button class="btn secondary" id="b-open-single" type="button" ${c.urls?"":"disabled"}>Ouvrir les attestations (${c.urls})</button>
+      <button class="btn secondary" id="b-dl-single" type="button" ${c.urls?"":"disabled"}>Télécharger le ZIP</button>
+      <span class="hint" id="dlmsg-single" style="margin:0">${esc(c.label)}</span>
     </div>` + comps.map(c=>renderCompany(c, domaine, seuil)).join("");
+  $("#b-open-single").onclick = () => openAttestations(items, $("#dlmsg-single"));
   $("#b-dl-single").onclick = e => downloadAttestations(items, e.currentTarget, $("#dlmsg-single"));
 }
 
@@ -318,7 +321,7 @@ $("#b-batch").onclick = async ()=>{
   const out = $("#out-batch"), btn = $("#b-batch"), seuil = +$("#seuil2").value || 0;
   const lines = $("#lot").value.split("\n").map(l=>l.trim()).filter(Boolean);
   if(!lines.length) return;
-  btn.disabled = true; $("#b-copy").classList.add("hidden"); $("#b-dl").classList.add("hidden"); out.classList.remove("hidden");
+  btn.disabled = true; $("#b-copy").classList.add("hidden"); $("#b-dl").classList.add("hidden"); $("#b-open").classList.add("hidden"); out.classList.remove("hidden");
   const res = [];
   for(let i=0;i<lines.length;i++){
     out.innerHTML = `Contrôle ${i+1} / ${lines.length}…`;
@@ -357,13 +360,15 @@ $("#b-batch").onclick = async ()=>{
   html += `</tbody></table></div><p class="hint">Contrôle du ${new Date().toLocaleDateString("fr-FR")} · seuil d'alerte ${seuil} jours · statut retenu = qualification du domaine qui court le plus loin.</p>`;
   out.innerHTML = html; lastTSV = tsv.join("\n");
   lastBatch = res.filter(r=>r.row).map(r=>({entreprise:r.entreprise, siret:r.row.siret, domaine:r.domaine, statut:r.st.label, row:r.row}));
-  const n = lastBatch.filter(i=>i.row.url_qualification).length;
-  $("#b-dl").textContent = `Télécharger les attestations (${n})`;
-  $("#b-dl").disabled = !n;
-  $("#b-copy").classList.remove("hidden"); $("#b-dl").classList.remove("hidden"); btn.disabled = false;
+  const c = countAtt(lastBatch);
+  $("#b-open").textContent = `Ouvrir les attestations (${c.urls})`;
+  $("#b-open").disabled = $("#b-dl").disabled = !c.urls;
+  $("#copymsg").textContent = c.label;
+  $("#b-copy").classList.remove("hidden"); $("#b-dl").classList.remove("hidden"); $("#b-open").classList.remove("hidden"); btn.disabled = false;
 };
 let lastBatch = [];
 $("#b-dl").onclick = e => downloadAttestations(lastBatch, e.currentTarget, $("#copymsg"));
+$("#b-open").onclick = () => openAttestations(lastBatch, $("#copymsg"));
 
 // --- Téléchargement groupé des attestations (ZIP)
 const slug = s => norm(s).replace(/ /g,"-").slice(0,40) || "x";
@@ -371,47 +376,68 @@ async function fetchWithTimeout(url, ms){
   const ctl = new AbortController(); const t = setTimeout(()=>ctl.abort(), ms);
   try{ return await fetch(url, {signal:ctl.signal, mode:"cors"}); } finally{ clearTimeout(t); }
 }
+// Regroupe les lignes par lien d'attestation : un même certificat couvre souvent plusieurs domaines
+function groupAtt(items){
+  const m = new Map();
+  for(const it of items){ const u = it.row.url_qualification; if(!u) continue; if(!m.has(u)) m.set(u, []); m.get(u).push(it); }
+  return m;
+}
+function countAtt(items){
+  const lignes = items.filter(i=>i.row.url_qualification).length, urls = groupAtt(items).size;
+  const label = !lignes ? "Aucune attestation en lien." :
+    lignes===urls ? `${urls} attestation(s).` :
+    `${lignes} qualifications, ${urls} attestation(s) distincte(s) : un même certificat couvre plusieurs domaines.`;
+  return {lignes, urls, label};
+}
+function openAttestations(items, msg){
+  const urls = [...groupAtt(items).keys()];
+  let bloque = 0;
+  urls.forEach(u => { const w = window.open(u, "_blank", "noopener"); if(!w) bloque++; });
+  // avec "noopener", window.open renvoie null même en cas de succès : on contrôle autrement
+  msg.textContent = `${urls.length} onglet(s) demandé(s). Si un seul s'ouvre, autorisez les fenêtres pop-up pour ce site (icône à droite de la barre d'adresse) puis recliquez.`;
+}
+async function fetchAtt(url){
+  const r = await fetchWithTimeout(url, 20000);
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  const blob = await r.blob(), ct = (r.headers.get("content-type")||blob.type||"").toLowerCase();
+  return {blob, ext: ct.includes("pdf") ? "pdf" : ct.includes("html") ? "html" : ct.includes("png") ? "png" : ct.includes("jpeg") ? "jpg" : "bin"};
+}
 async function downloadAttestations(items, btn, msg){
-  const uniq = [...new Map(items.filter(i=>i.row.url_qualification).map(i=>[i.row.url_qualification, i])).values()];
-  if(!uniq.length) return;
+  const groups = groupAtt(items);
+  if(!groups.size) return;
   if(typeof JSZip === "undefined"){ msg.textContent = "Module ZIP non chargé : vérifier la connexion."; return; }
   btn.disabled = true;
-  const zip = new JSZip(), ok = [], ko = [];
-  for(let i=0;i<uniq.length;i++){
-    const it = uniq[i], url = it.row.url_qualification;
-    msg.textContent = `Récupération ${i+1} / ${uniq.length}…`;
-    const base = `${it.siret}_${slug(it.entreprise)}_${slug(it.row.domaine)}_${it.row.code_qualification||i+1}`;
-    try{
-      const r = await fetchWithTimeout(url, 20000);
-      if(!r.ok) throw new Error("HTTP "+r.status);
-      const blob = await r.blob(), ct = (r.headers.get("content-type")||blob.type||"").toLowerCase();
-      const ext = ct.includes("pdf") ? "pdf" : ct.includes("html") ? "html" : ct.includes("png") ? "png" : ct.includes("jpeg") ? "jpg" : "bin";
-      zip.file(`attestations/${base}.${ext}`, blob); ok.push({...it, fichier:`${base}.${ext}`});
-    }catch(err){ ko.push({...it, raison: err.name==="AbortError" ? "délai dépassé" : "site de l'organisme non accessible depuis la page"}); }
+  const zip = new JSZip(), lignes = [];
+  let i = 0, nOk = 0;
+  for(const [url, its] of groups){
+    i++; msg.textContent = `Récupération ${i} / ${groups.size}…`;
+    const it = its[0];
+    const base = `${it.siret}_${slug(it.entreprise)}_${slug(it.row.organisme)}_${i}`;
+    let fichier;
+    try{ const {blob, ext} = await fetchAtt(url); fichier = `${base}.${ext}`; zip.file(`attestations/${fichier}`, blob); nOk++; }
+    catch(err){ fichier = `NON TÉLÉCHARGÉ : ${err.name==="AbortError" ? "délai dépassé" : "le site de l'organisme refuse le téléchargement depuis une autre page"}`; }
+    for(const x of its) lignes.push({...x, fichier, url, partage: its.length});
   }
-  const head = ["Statut","Entreprise","SIRET","Domaine","Qualification","Organisme","Fin de validité","Fichier","Lien de l'attestation"];
-  const line = (it, f) => [it.statut, it.entreprise, it.siret, it.row.domaine, it.row.nom_qualification, it.row.organisme, fmt(it.row.lien_date_fin), f, it.row.url_qualification]
+  const head = ["Statut","Entreprise","SIRET","Domaine","Qualification","Organisme","Fin de validité","Fichier","Lien de l'attestation","Attestation commune à"];
+  const csv = l => [l.statut, l.entreprise, l.siret, l.row.domaine, l.row.nom_qualification, l.row.organisme, fmt(l.row.lien_date_fin), l.fichier, l.url, l.partage>1?`${l.partage} qualifications`:""]
     .map(x=>`"${String(x??"").replace(/"/g,'""')}"`).join(";");
-  zip.file("index_attestations.csv", "﻿" + [head.join(";"), ...ok.map(i=>line(i,i.fichier)), ...ko.map(i=>line(i,`NON TÉLÉCHARGÉ : ${i.raison}`))].join("\r\n"));
-  const li = arr => arr.map(i=>`<li><a href="${esc(i.row.url_qualification)}">${esc(i.entreprise)} — ${esc(i.row.domaine)} (${esc(i.row.organisme)}, fin ${fmt(i.row.lien_date_fin)})</a>${i.raison?` — ${esc(i.raison)}`:""}</li>`).join("");
-  zip.file("liens_attestations.html", `<!DOCTYPE html><meta charset="utf-8"><title>Attestations RGE</title><body style="font-family:sans-serif">
-<h1>Attestations RGE</h1><p>Extraction du ${new Date().toLocaleString("fr-FR")} — source ADEME.</p>
-${ko.length?`<h2>À ouvrir à la main (${ko.length})</h2><ul>${li(ko)}</ul>`:""}${ok.length?`<h2>Téléchargées dans le dossier « attestations » (${ok.length})</h2><ul>${li(ok)}</ul>`:""}</body>`);
+  zip.file("index_attestations.csv", "﻿" + [head.join(";"), ...lignes.map(csv)].join("\r\n"));
+  const rows = lignes.map(l=>`<tr><td>${esc(l.statut)}</td><td>${esc(l.entreprise)}<br><small>${esc(l.siret)}</small></td><td>${esc(l.row.domaine)}</td><td>${esc(l.row.organisme)}</td><td>${fmt(l.row.lien_date_fin)}</td><td><a href="${esc(l.url)}">ouvrir l'attestation</a>${l.partage>1?`<br><small>commune à ${l.partage} qualifications</small>`:""}</td><td>${esc(l.fichier)}</td></tr>`).join("");
+  zip.file("attestations.html", `<!DOCTYPE html><meta charset="utf-8"><title>Attestations RGE</title>
+<style>body{font-family:sans-serif;margin:24px}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:6px 8px;text-align:left;vertical-align:top;font-size:14px}</style>
+<h1>Attestations RGE</h1><p>Extraction du ${new Date().toLocaleString("fr-FR")}. Source : liste des entreprises RGE de l'ADEME. ${lignes.length} qualification(s), ${groups.size} attestation(s) distincte(s), ${nOk} téléchargée(s).</p>
+<table><tr><th>Statut</th><th>Entreprise</th><th>Domaine</th><th>Organisme</th><th>Fin</th><th>Attestation</th><th>Fichier</th></tr>${rows}</table>`);
   const blob = await zip.generateAsync({type:"blob"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `attestations_RGE_${new Date().toISOString().slice(0,10)}.zip`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
-  msg.textContent = ko.length
-    ? `ZIP prêt : ${ok.length} attestation(s) récupérée(s), ${ko.length} à ouvrir à la main (liens dans liens_attestations.html).`
-    : `ZIP prêt : ${ok.length} attestation(s).`;
+  msg.textContent = nOk===groups.size
+    ? `ZIP prêt : ${lignes.length} qualification(s), ${nOk} attestation(s) téléchargée(s).`
+    : `ZIP prêt : ${lignes.length} qualification(s) dans l'index, ${nOk} / ${groups.size} attestation(s) téléchargée(s). Les autres sites refusent le téléchargement direct : utilisez « Ouvrir les attestations ».`;
   btn.disabled = false;
 }
-$("#b-copy").onclick = async ()=>{
-  try{ await navigator.clipboard.writeText(lastTSV); $("#copymsg").textContent = "Tableau copié."; }
-  catch{ $("#copymsg").textContent = "Copie refusée par le navigateur."; }
-};
 </script>
 </body>
 </html>
